@@ -1,14 +1,14 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { SQL } from 'bun'
+import { drizzle } from 'drizzle-orm/bun-sql'
 import { env } from '../env.js'
 import * as schema from './schema/index.js'
 
-const queryClient = postgres(env.databaseUrl, {
+const client = new SQL({
+  url: env.databaseUrl,
   max: 10,
-  idle_timeout: 30,
-  prepare: false,
+  idleTimeout: 30,
 })
 
-export const db = drizzle(queryClient, { schema })
+export const db = drizzle(client, { schema })
 export type DB = typeof db
 export type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]

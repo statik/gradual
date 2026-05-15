@@ -1,16 +1,17 @@
 # Gradual — Pi Agent Demo Platform
 
-Hono + Postgres + Electric + Better Auth. Anonymous-first identities that upgrade in place. See `docs/design.html` for the full design memo.
+Hono + Postgres + Electric + Better Auth, on **Bun**. Anonymous-first identities that upgrade in place. See `docs/design.md` for the full design memo.
 
 ## Layout
 
 ```
 src/
-  index.ts          # Hono entrypoint
+  index.ts          # Hono entrypoint (Bun + node:http dispatcher)
   auth.ts           # Better Auth (anonymous + accountLinking)
   env.ts            # env validation
   db/
-    client.ts       # drizzle client
+    client.ts       # drizzle on bun:sql
+    migrate.ts      # drizzle migrator (bun-sql)
     schema/         # auth + agent tables
   routes/
     inference.ts    # OpenAI-compatible streaming gateway
@@ -22,6 +23,9 @@ src/
   quota/            # atomic conditional debit + reconcile
   middleware/
     auth.ts         # session middleware
+  admin/
+    index.ts        # AdminJS resources
+    auth.ts         # Express middleware gating /admin behind Better Auth
 public/
   index.html        # minimal demo page
 ```
@@ -31,12 +35,14 @@ public/
 ```bash
 cp .env.example .env
 docker compose up -d                # postgres + electric
-npm install
-npm run db:generate
-npm run db:migrate
-npm run dev
+bun install
+bun run db:generate
+bun run db:migrate
+bun run dev                         # bun --hot src/index.ts
 open http://localhost:3000
 ```
+
+`bun` runs TypeScript directly; there is no build step. `.env` is auto-loaded.
 
 ## What's wired
 
@@ -45,10 +51,17 @@ open http://localhost:3000
 - `POST /api/inference` — estimate → atomic debit → SSE stream → reconcile + insert message/tool calls in one tx.
 - `GET /api/sync/:table` — proxies to Electric with `account_id = <user.id>` pinned server-side.
 - `GET /api/me`, `/healthz`, `/readyz`.
+- `GET /admin` — AdminJS over `@adminjs/sql`, gated by Better Auth + `ADMIN_EMAILS` allowlist.
+
+## Bun-specific notes
+
+- DB driver is `bun:sql` (built-in Postgres client) via `drizzle-orm/bun-sql`.
+- `@hono/node-server` is retained for the `node:http` top-level dispatcher (Bun's node compat handles it); rewriting the dispatch as a fetch-to-Express bridge wasn't worth the bridge code.
+- `package.json` pins every `@tiptap/*` to `2.1.13` via `overrides` — AdminJS's design-system declares `^2.1.13` which bun otherwise resolves to a newer API-incompatible version.
 
 ## What's stubbed
 
-- Browser agent (pi-agent-core + Pyodide) — not yet vendored.
-- AdminJS — not yet wired.
-- ECS Fargate Terraform/CDK — not yet authored.
+- Browser agent (pi-agent-core + Pyodide).
+- ECS Fargate IaC.
+- Initial drizzle migration files (`bun run db:generate` creates them).
 - Anthropic prompt-token estimation uses `chars/4`; swap to `/v1/messages/count_tokens` for precision.

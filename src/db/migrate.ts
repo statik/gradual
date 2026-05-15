@@ -1,13 +1,13 @@
-import { migrate } from 'drizzle-orm/postgres-js/migrator'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { SQL } from 'bun'
+import { drizzle } from 'drizzle-orm/bun-sql'
+import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { env } from '../env.js'
 
 async function main(): Promise<void> {
-  const client = postgres(env.databaseUrl, { max: 1 })
+  const client = new SQL({ url: env.databaseUrl, max: 1 })
   const db = drizzle(client)
   await migrate(db, { migrationsFolder: './drizzle' })
-  await client.end()
+  await client.close()
   console.log('[migrate] done')
 }
 

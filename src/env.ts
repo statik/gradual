@@ -1,4 +1,4 @@
-import 'dotenv/config'
+// Bun auto-loads .env files; no explicit loader needed.
 
 function required(name: string): string {
   const value = process.env[name]
