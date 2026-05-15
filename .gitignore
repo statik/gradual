@@ -7,3 +7,11 @@ dist/
 coverage/
 .drizzle/
 .tsbuildinfo
+
+# terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/*.tfplan
