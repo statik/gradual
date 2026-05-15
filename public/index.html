@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Agent Demo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="dot"></span>
+      <strong>Pi Agent Demo</strong>
+    </div>
+    <div class="topbar__right">
+      <div class="data-menu">
+        <button type="button" id="data-btn" aria-haspopup="true" aria-expanded="false">Datasets ▾</button>
+        <div id="data-panel" class="data-panel" hidden role="menu" aria-label="Sample datasets">
+          <div class="data-panel__head">
+            <span>Mount into <code>/data</code> · persists across reloads</span>
+            <button type="button" id="clear-workspace">Clear</button>
+          </div>
+          <ul id="data-list" class="data-list"></ul>
+        </div>
+      </div>
+      <select id="model-select" aria-label="Model">
+        <option value="gpt-4o-mini" selected>gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+        <option value="claude-3-5-haiku-latest">claude-3-5-haiku</option>
+        <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet</option>
+      </select>
+      <div class="quota" title="Daily token budget">
+        <div class="quota__bar"><div id="quota-fill"></div></div>
+        <span id="quota-text">— / —</span>
+      </div>
+      <div id="user-pill" class="pill">…</div>
+    </div>
+  </header>
+
+  <div id="mounted-strip" class="mounted-strip" hidden>
+    <span class="mounted-strip__label">Mounted</span>
+    <div id="mounted-chips" class="mounted-chips"></div>
+  </div>
+
+  <main class="layout">
+    <section id="transcript" class="transcript">
+      <article class="msg msg--system">
+        <header class="msg__role">system</header>
+        <div class="msg__content">
+          Ask the agent to do something — it can run Python via the <code>python_run</code> tool. Each cell waits for you to Run or Skip. Use <strong>Datasets</strong> to mount a CSV/Parquet file into <code>/data</code>.
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="composer">
+    <form id="composer-form">
+      <textarea id="composer-input" rows="2" placeholder="e.g. compute the first 20 fibonacci numbers and plot them" required></textarea>
+      <button type="submit" id="composer-submit">Send</button>
+    </form>
+    <div class="composer__hints">
+      <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline
+    </div>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+region  = "us-east-1"
+project = "gradual"
+
+# Set after the first apply creates the ECR repo and you push an image:
+#   app_image = "<account>.dkr.ecr.us-east-1.amazonaws.com/gradual-app:<gitsha>"
+app_image = ""
+
+# Pin Electric.
+electric_image = "electricsql/electric:1.0.0"
+
+# Optional: real domain + ACM cert (enables HTTPS + HTTP->HTTPS redirect).
+# public_base_url     = "https://demo.example.com"
+# acm_certificate_arn = "arn:aws:acm:us-east-1:...:certificate/..."
+
+# Provider keys and OAuth creds (sensitive — keep this file out of git).
+openai_api_key    = ""
+anthropic_api_key = ""
+# google_client_id     = ""
+# google_client_secret = ""
+# github_client_id     = ""
+# github_client_secret = ""
+
+admin_emails = ""
+
+quota_anon_tokens_per_day = 20000
+quota_free_tokens_per_day = 200000
