@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design Memo — Pi Agent Demo Platform (as built)</title>
+  <script>
+    document.documentElement.className += " js";
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #cfd4cf;
+      --paper-deep: #7f8985;
+      --panel: #e6e6df;
+      --ink: #171c1d;
+      --muted: #4a5250;
+      --olive: #4a4f3f;
+      --amber: #9a7a55;
+      --ochre: #b79b65;
+      --mustard: #d6c7a4;
+      --teal: #2f5557;
+      --blue: #5f7f86;
+      --line: #9aa39d;
+      --code: #111819;
+      --code-bg: #bdc8c3;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at 14% 0%, rgba(214, 199, 164, 0.5), transparent 28rem),
+        radial-gradient(circle at 86% 8%, rgba(95, 127, 134, 0.28), transparent 30rem),
+        linear-gradient(135deg, #dce0dc, var(--paper) 52%, var(--paper-deep));
+      color: var(--ink);
+      line-height: 1.6;
+    }
+
+    .progress-bar {
+      position: fixed;
+      z-index: 20;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 0.45rem;
+      background: rgba(23, 28, 29, 0.13);
+    }
+
+    .progress-bar__fill {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--olive), var(--ochre), var(--amber));
+      transition: width 120ms linear;
+    }
+
+    .story-rail {
+      position: fixed;
+      z-index: 15;
+      top: 50%;
+      right: clamp(0.8rem, 2vw, 1.8rem);
+      display: grid;
+      gap: 0.8rem;
+      transform: translateY(-50%);
+    }
+
+    .story-dot {
+      position: relative;
+      width: 0.78rem;
+      height: 0.78rem;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: var(--panel);
+      cursor: pointer;
+      opacity: 0.72;
+      transition: background 180ms ease, opacity 180ms ease, transform 180ms ease;
+    }
+
+    .story-dot:focus-visible {
+      outline: 2px solid var(--teal);
+      outline-offset: 4px;
+    }
+
+    .story-dot::after {
+      position: absolute;
+      top: 50%;
+      right: 1.15rem;
+      width: max-content;
+      max-width: 14rem;
+      padding: 0.22rem 0.5rem;
+      border: 1px solid var(--line);
+      background: rgba(230, 230, 223, 0.95);
+      color: var(--ink);
+      content: attr(aria-label);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-50%) translateX(0.3rem);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .story-dot:hover::after,
+    .story-dot:focus-visible::after,
+    .story-dot.is-active::after {
+      opacity: 1;
+      transform: translateY(-50%) translateX(0);
+    }
+
+    .story-dot.is-active {
+      background: var(--olive);
+      opacity: 1;
+      transform: scale(1.35);
+    }
+
+    .chapter-indicator {
+      position: fixed;
+      z-index: 14;
+      bottom: clamp(1rem, 3vw, 2rem);
+      left: clamp(1rem, 4vw, 3rem);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.6rem 0.85rem;
+      align-items: center;
+      max-width: min(28rem, calc(100vw - 7rem));
+      padding: 0.75rem 0.95rem;
+      border: 1px solid rgba(154, 122, 85, 0.8);
+      background: rgba(230, 230, 223, 0.84);
+      box-shadow: 0 10px 28px rgba(23, 28, 29, 0.14);
+      backdrop-filter: blur(8px);
+    }
+
+    .chapter-indicator__number {
+      color: var(--olive);
+      font-size: 1.55rem;
+      line-height: 1;
+    }
+
+    .chapter-indicator__label {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .chapter-indicator__rule {
+      grid-column: 1 / -1;
+      height: 1px;
+      overflow: hidden;
+      background: rgba(23, 28, 29, 0.18);
+    }
+
+    .chapter-indicator__rule span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--ochre);
+      transition: width 120ms linear;
+    }
+
+    main { scroll-snap-type: y proximity; }
+
+    section {
+      display: grid;
+      min-height: 100vh;
+      padding: 4.5rem clamp(1.25rem, 5vw, 6rem);
+      place-items: center;
+      scroll-snap-align: start;
+    }
+
+    .slide { width: min(1180px, 100%); }
+
+    .card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-top: 9px double var(--olive);
+      background:
+        linear-gradient(90deg, rgba(214, 199, 164, 0.26), transparent 36%),
+        rgba(230, 230, 223, 0.96);
+      box-shadow:
+        0 1px 0 rgba(23, 28, 29, 0.18),
+        0 18px 45px rgba(44, 55, 55, 0.16);
+      transition: opacity 420ms ease, transform 420ms ease, box-shadow 420ms ease;
+    }
+
+    .js section:not(.is-active) .card {
+      opacity: 0.76;
+      transform: translateY(1.8rem) scale(0.985);
+    }
+
+    .js section.is-active .card {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      box-shadow:
+        0 1px 0 rgba(23, 28, 29, 0.18),
+        0 26px 70px rgba(44, 55, 55, 0.22);
+    }
+
+    .card-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.28fr);
+      column-gap: clamp(2rem, 6vw, 5rem);
+      padding: clamp(2rem, 4vw, 4.6rem);
+    }
+
+    .card-body > * { grid-column: 1; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.1rem;
+      color: var(--teal);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 999px;
+      background: var(--ochre);
+      content: "";
+    }
+
+    h1, h2, h3 { margin: 0; line-height: 1.05; }
+
+    h1 {
+      max-width: 920px;
+      color: var(--olive);
+      font-size: clamp(2.4rem, 5.5vw, 4.6rem);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+    }
+
+    h2 {
+      max-width: 820px;
+      color: var(--olive);
+      font-size: clamp(1.8rem, 3.8vw, 3.2rem);
+      font-weight: 500;
+      letter-spacing: -0.03em;
+    }
+
+    h3 {
+      margin-top: 1.4rem;
+      color: var(--ink);
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 760px;
+      margin: 1.2rem 0 0;
+      color: var(--ink);
+      font-size: clamp(1.02rem, 1.4vw, 1.15rem);
+    }
+
+    p.muted { color: var(--muted); }
+
+    .lead {
+      max-width: 820px;
+      font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+      color: var(--ink);
+    }
+
+    .grid { display: grid; gap: 1rem; margin-top: 1.6rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .source {
+      padding: 1rem 1.15rem;
+      border: 1px solid var(--line);
+      background: rgba(230, 230, 223, 0.68);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.92rem;
+    }
+
+    .source strong { display: block; margin-bottom: 0.35rem; color: var(--ink); }
+    .source span { color: var(--ink); }
+
+    .callout {
+      grid-column: 2;
+      align-self: start;
+      margin-top: 2rem;
+      padding: 0.4rem 0 0.4rem 1rem;
+      border-left: 3px solid var(--teal);
+      color: var(--muted);
+      font-size: 0.96rem;
+      font-style: italic;
+    }
+    .callout.warning { border-left-color: var(--ochre); }
+    .callout.danger { border-left-color: var(--olive); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1.6rem;
+      border-top: 2px solid var(--ink);
+      border-bottom: 2px solid var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.75rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      color: var(--ink);
+    }
+
+    th {
+      background: rgba(214, 199, 164, 0.32);
+      color: var(--ink);
+      font-size: 0.78rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.18rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(95, 127, 134, 0.2);
+      color: #355e66;
+      font-size: 0.74rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .badge.success { background: rgba(31, 63, 70, 0.18); color: #1f3f46; }
+    .badge.warning { background: rgba(214, 199, 164, 0.42); color: #5e4a2e; }
+    .badge.danger { background: rgba(154, 122, 85, 0.28); color: var(--olive); }
+
+    code, pre {
+      border-radius: 10px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    code { padding: 0.12rem 0.36rem; font-size: 0.88em; }
+
+    pre {
+      overflow-x: auto;
+      margin: 1.4rem 0 0;
+      padding: 1.1rem 1.25rem;
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--blue);
+      font-size: 0.85rem;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .code-ts, .code-sql, .code-hcl {
+      position: relative;
+      background:
+        linear-gradient(90deg, rgba(95, 127, 134, 0.17), transparent 44%),
+        var(--code-bg);
+    }
+    .code-ts::before, .code-sql::before, .code-hcl::before {
+      position: absolute;
+      top: 0.6rem;
+      right: 0.85rem;
+      color: var(--muted);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .code-ts::before { content: "TypeScript"; }
+    .code-sql::before { content: "SQL"; }
+    .code-hcl::before { content: "Terraform"; }
+
+    .tok-keyword { color: var(--olive); font-weight: 700; }
+    .tok-boolean { color: var(--teal); font-weight: 700; }
+    .tok-string { color: #6b5537; }
+    .tok-regex { color: #3a6670; }
+    .tok-function { color: var(--teal); font-weight: 700; }
+    .tok-comment { color: var(--muted); font-style: italic; }
+
+    .footer {
+      margin-top: 2rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .footer code { font-size: 0.82rem; }
+
+    @media print {
+      .progress-bar, .story-rail, .chapter-indicator { display: none; }
+      body { background: #fff; }
+      main { scroll-snap-type: none; }
+      section { min-height: auto; break-inside: avoid; page-break-after: always; }
+      .card { box-shadow: none; }
+    }
+
+    @media (max-width: 820px) {
+      .story-rail, .chapter-indicator { display: none; }
+      main { scroll-snap-type: none; }
+      section { min-height: auto; padding-block: 2rem; scroll-snap-align: none; }
+      .card-body { grid-template-columns: 1fr; }
+      .callout { grid-column: 1; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+      pre { white-space: pre-wrap; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition: none !important;
+      }
+      main { scroll-snap-type: none; }
+      section { scroll-snap-align: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-bar" role="progressbar" aria-label="Document scroll progress"
+       aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-bar__fill"></div>
+  </div>
+
+  <nav class="story-rail" aria-label="Section navigation"></nav>
+
+  <aside class="chapter-indicator" aria-live="polite">
+    <span class="chapter-indicator__number">01</span>
+    <span class="chapter-indicator__label">Decision</span>
+    <span class="chapter-indicator__rule"><span></span></span>
+  </aside>
+
+  <main>
+    <section>
+      <div class="slide">
+        <div class="card">
+          <header class="card-body">
+            <div class="eyebrow">Decision · as built</div>
+            <h1>A coding-agent demo on Bun, Hono, Postgres, and sync — anonymous first, upgrade in place</h1>
+            <p class="lead">
+              One Bun/TypeScript service fronts RDS Postgres, streams chat completions through a hand-built OpenAI-compatible gateway, and lets Electric sync agent state to the browser. Better Auth manages anonymous-first identities that link to Google or GitHub in place — same row, same history, raised quota. The browser runs a Pi-style agent loop with a gated <code>python_run</code> tool on Pyodide, backed by a persistent virtual filesystem.
+            </p>
+            <table>
+              <thead>
+                <tr><th>Layer</th><th>Choice (as built)</th><th>Role</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Runtime</td><td><code>Bun + TypeScript</code></td><td>One server process, runs TS directly</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>HTTP</td><td><code>Hono</code> + <code>node:http</code> dispatcher</td><td>Routes, middleware, SSE</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Database</td><td><code>RDS Postgres 16</code> (logical repl)</td><td>Source of truth</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>ORM / driver</td><td><code>Drizzle</code> on <code>bun:sql</code></td><td>Schema-as-code, typed queries</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Auth</td><td><code>Better Auth</code> + anonymous + accountLinking</td><td>Gradual registration</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Admin UI</td><td><code>AdminJS</code> over <code>@adminjs/sql</code></td><td>Internal ops, Better-Auth-gated</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Read sync</td><td><code>Electric</code> (internal-only service)</td><td>Live UI on agent state</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Browser agent</td><td>custom loop + <code>Pyodide</code> worker</td><td>Demo runtime, gated tool exec</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Datasets / FS</td><td>server proxy + <code>IDBFS</code></td><td>Sample data, persists across reload</td><td><span class="badge success">Built</span></td></tr>
+                <tr><td>Deploy</td><td>Terraform: ECS Fargate, ALB, RDS, Cloud Map</td><td>Single region, single-AZ v1</td><td><span class="badge warning">Authored, unapplied</span></td></tr>
+              </tbody>
+            </table>
+            <div class="callout warning">
+              This memo is the <em>as-built</em> record, including deviations from the original plan: Node → Bun, Electric demoted to internal-only, the ALB idle-timeout correction, and several "verified by review, not by a running system" caveats called out in §11.
+            </div>
+          </header>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Runtime</div>
+            <h2>Bun, chosen mid-build — and the one upstream bug it surfaced</h2>
+            <p>The project started on Node 20 + tsx, then switched to Bun: it runs TypeScript directly (no build step), auto-loads <code>.env</code>, and ships a native Postgres client (<code>bun:sql</code>) that Drizzle adapts via <code>drizzle-orm/bun-sql</code>. Dropped <code>tsx</code>, <code>dotenv</code>, and <code>postgres</code> (postgres-js).</p>
+            <h3>What stayed Node-shaped on purpose</h3>
+            <p><code>@hono/node-server</code> is kept for the top-level <code>node:http</code> dispatcher that splits <code>/admin/*</code> (Express + AdminJS) from everything else (Hono). Bun's node:http compatibility runs it unmodified. Rewriting it as a fetch-to-Express bridge was not worth the bridge code.</p>
+            <h3>The tiptap pin</h3>
+            <p>AdminJS's design-system pins <code>@tiptap/* @ 2.1.13</code>, but <code>@tiptap/starter-kit@2.1.13</code> declares <code>^2.1.13</code> for sub-extensions. Bun resolves that caret to the latest 2.x (2.27.x), whose <code>@tiptap/extension-horizontal-rule</code> imports <code>canInsertNode</code> from <code>@tiptap/core</code> — an export 2.1.13 does not have. npm's older lockfile happened to dedupe down; Bun surfaced the upstream pinning bug. Fix: pin all 31 <code>@tiptap/*</code> packages to <code>2.1.13</code> via <code>overrides</code>.</p>
+            <div class="callout danger">
+              This would have bitten Node too the moment AdminJS actually loaded the design-system; Bun just made it visible at module-load time instead of deep in a render path.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Architecture</div>
+            <h2>Three runtime processes, one source of truth</h2>
+            <p>The browser does two things at once. The agent loop calls <code>/api/inference</code> over plain SSE for streaming completions — hot and synchronous, no sync layer in front. Independently, the UI long-polls Electric shapes (through a server proxy) for live row updates on the quota meter. Both feeds reach the same tab.</p>
+            <div class="grid grid-2">
+              <div class="source">
+                <strong>Browser</strong>
+                <span>A hand-written agent loop drives streamed tool-calling. <code>python_run</code> runs in a Pyodide Web Worker behind a Run / Edit / Skip cell. The Electric client long-polls <code>/api/sync/quota_buckets</code>.</span>
+              </div>
+              <div class="source">
+                <strong>Bun app (Fargate)</strong>
+                <span>Owns every write: auth handlers, <code>/api/inference</code> streaming, quota debits, message + tool-call inserts, the dataset proxy, the Electric shape proxy, and the AdminJS surface. Stateless.</span>
+              </div>
+              <div class="source">
+                <strong>Electric sync (Fargate, internal)</strong>
+                <span>Consumes Postgres logical replication, serves shape subscriptions over HTTP. Reachable only from the app via Cloud Map — never public.</span>
+              </div>
+              <div class="source">
+                <strong>RDS Postgres</strong>
+                <span>Single source of truth. <code>wal_level=logical</code> via the <code>rds.logical_replication</code> parameter; replication slot for Electric, <code>bun:sql</code> pool for the app.</span>
+              </div>
+            </div>
+            <div class="callout">
+              Streaming bytes never flow through Electric. The originating tab sees tokens via SSE in real time; row inserts at stream end propagate to other tabs via shapes a beat later.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Identity</div>
+            <h2>The account row outlives the upgrade</h2>
+            <p>Better Auth's anonymous plugin gives the visitor a real authenticated session on first load. A <code>databaseHooks.user.create.after</code> hook seeds a virtual key + quota bucket at the anon tier. If they later sign in with Google or GitHub, an <code>onLinkAccount</code> callback re-targets every foreign key from the anonymous user to the linked one in a single Postgres transaction and raises the quota tier.</p>
+            <pre class="code-ts" data-lang="ts">plugins: [
+  anonymous({
+    onLinkAccount: async ({ anonymousUser, newUser }) => {
+      await db.transaction(async (tx) => {
+        const anonId = anonymousUser.user.id
+        const newId = newUser.user.id
+        await tx.update(virtualKeys).set({ accountId: newId }).where(eq(virtualKeys.accountId, anonId))
+        await tx.update(usageLog).set({ accountId: newId }).where(eq(usageLog.accountId, anonId))
+        await tx.update(agentSessions).set({ accountId: newId }).where(eq(agentSessions.accountId, anonId))
+        await tx.update(agentMessages).set({ accountId: newId }).where(eq(agentMessages.accountId, anonId))
+        await tx.update(agentToolCalls).set({ accountId: newId }).where(eq(agentToolCalls.accountId, anonId))
+        await tx.update(quotaBuckets).set({ accountId: newId }).where(eq(quotaBuckets.accountId, anonId))
+        await raiseQuotaLimit(tx, newId, 'free')
+      })
+    },
+  }),
+]</pre>
+            <div class="callout warning">
+              Better Auth's link creates a new <code>user.id</code>; FKs migrate but anything else pinning the old id (logs, JWTs, client cache) gets a one-time rewrite. Keeping the anon id stable bypasses BA's flow — punted unless a concrete need surfaces.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Data model</div>
+            <h2>Ten tables; four sync live to the browser</h2>
+            <p>Better Auth owns four tables, all server-only — anything with OAuth tokens, session secrets, or PII never reaches the wire. Six app tables split between sensitive (virtual keys with <code>key_hash</code>) and Electric-friendly (quota, sessions, messages, tool calls, usage log).</p>
+            <table>
+              <thead><tr><th>Table</th><th>Owner</th><th>Electric</th><th>Reason</th></tr></thead>
+              <tbody>
+                <tr><td><code>user</code> · <code>account</code> · <code>session</code> · <code>verification</code></td><td>Better Auth</td><td><span class="badge danger">No</span></td><td>PII, OAuth tokens, session secrets, auth ephemera.</td></tr>
+                <tr><td><code>virtual_keys</code></td><td>App</td><td><span class="badge danger">No</span></td><td>Contains <code>key_hash</code>; resolved server-side only.</td></tr>
+                <tr><td><code>quota_buckets</code></td><td>App</td><td><span class="badge success">Yes</span></td><td>Powers the live token meter.</td></tr>
+                <tr><td><code>usage_log</code></td><td>App</td><td><span class="badge warning">Optional</span></td><td>Recent-activity panel; not subscribed in v1.</td></tr>
+                <tr><td><code>agent_sessions</code></td><td>App</td><td><span class="badge success">Yes</span></td><td>Sidebar list.</td></tr>
+                <tr><td><code>agent_messages</code></td><td>App</td><td><span class="badge success">Yes</span></td><td>Transcript; insert-on-completion.</td></tr>
+                <tr><td><code>agent_tool_calls</code></td><td>App</td><td><span class="badge success">Yes</span></td><td>State machine for Python cells.</td></tr>
+              </tbody>
+            </table>
+            <p><code>account_id</code> is denormalized onto every Electric'd table. Electric shapes are single-table; keeping the column on the leaf row makes shape <code>WHERE</code> clauses one-liners (<code>account_id = X</code>) and stays in Electric's optimized path. One extra column per row is a fine cost.</p>
+            <div class="callout">
+              Production shapes go through <code>/api/sync/:table</code> on the app, which pins <code>account_id = currentUser.id</code> server-side and forwards the upstream Electric stream. The browser never sees the raw Electric URL.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Gateway</div>
+            <h2>Estimate, debit, stream, reconcile</h2>
+            <p>The inference route is where correctness lives. Pre-debit an estimate before opening the upstream stream, fail-fast if over quota, stream chunks straight to the browser, then in <code>finally</code> compute actual usage and reconcile inside one Postgres transaction that also inserts the assistant message and tool calls. One commit means Electric subscribers see the final state arrive together.</p>
+            <h3>Atomic debit — the load-bearing primitive</h3>
+            <pre class="code-ts" data-lang="ts">const r = await db.update(quotaBuckets)
+  .set({ usedTokens: sql`${quotaBuckets.usedTokens} + ${n}` })
+  .where(and(
+    eq(quotaBuckets.id, bucketId),
+    sql`${quotaBuckets.usedTokens} + ${n} <= ${quotaBuckets.limitTokens}`,
+  ))
+  .returning({ id: quotaBuckets.id })
+return r.length > 0  // zero rows == quota exceeded, no SELECT-then-UPDATE race</pre>
+            <p>One statement, atomic per Postgres MVCC. Reconcile applies a signed delta after the stream completes; <code>GREATEST(0, …)</code> guards refund drift. The route validates <code>session_id</code> ownership and returns it as an <code>X-Session-Id</code> header so the client can pin one session across recursive tool turns.</p>
+            <h3>Adapters</h3>
+            <div class="grid grid-2">
+              <div class="source"><strong>OpenAI</strong><span>Largely passthrough; <code>gpt-tokenizer</code> for estimation. Chunks forwarded as-is.</span></div>
+              <div class="source"><strong>Anthropic</strong><span>Pull <code>system</code> out of messages; translate to the Messages API; convert <code>content_block_delta</code> / <code>message_delta</code> events to OpenAI-shaped chunks plus a final <code>chunk.usage</code>. <code>chars/4</code> estimate, reconcile after.</span></div>
+            </div>
+            <div class="callout warning">
+              The wire to the browser is always OpenAI-shaped regardless of upstream provider — keeping that boundary clean avoids weeks of bug-chasing.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Browser agent</div>
+            <h2>The loop runs; Pyodide runs only what the user approves</h2>
+            <p>A hand-written loop streams completions, accumulates tool-call deltas by index, and on <code>finish_reason: tool_calls</code> renders a cell and pauses. The agent's proposed code lands in an editable textarea; <strong>the executed code — which may differ — is what runs and what is reported back</strong>. The tool result feeds the next inference turn, closing the loop.</p>
+            <div class="grid grid-2">
+              <div class="source"><strong><code>python_run(code)</code></strong><span>Pyodide in a Web Worker, lazy-loaded (~10 MB) from jsDelivr on first use. <code>loadPackagesFromImports</code> resolves <code>import pandas</code> / <code>pyarrow</code> before execution. Kernel persists across cells.</span></div>
+              <div class="source"><strong>Run / Edit / Skip</strong><span>Run ships the textarea contents; Skip resolves <code>status='skipped'</code>. Either way the result is POSTed to <code>/api/tool-calls/:id/complete</code>, which Electric syncs.</span></div>
+              <div class="source"><strong>Auth</strong><span>Same-origin <code>/api/inference</code>, <code>credentials: 'include'</code>, no API key in the browser. The session cookie is the auth; virtual keys stay server-side.</span></div>
+              <div class="source"><strong>Cost model</strong><span>Tokens debit when the agent <em>calls</em> the tool, not when the user clicks Run. Pyodide compute is client-side and free — cost maps to LLM tokens, not wall-clock.</span></div>
+            </div>
+            <div class="callout">
+              Agents need to know what actually ran, not what they proposed — so edited code, not the model's original, is what flows back into the transcript.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Datasets &amp; persistence</div>
+            <h2>A server-proxied catalog, persisted to IndexedDB</h2>
+            <p>Kaggle is not usable directly — its files 302 to a login wall and need an authenticated API token. Instead a curated catalog (seaborn-data, vega-datasets, a sample Parquet) is fetched <em>server-side</em> through <code>/api/datasets/:id/download</code>, which also kills the CORS problem and leaves a clean seam for a future Kaggle source behind <code>KAGGLE_KEY</code>. No quota debit — the cost model is tokens, not bandwidth.</p>
+            <h3>The virtual FS survives reload</h3>
+            <p><code>/data</code> is an Emscripten <strong>IDBFS</strong> mount. <code>syncfs(true)</code> on worker init restores files persisted from a prior session; <code>syncfs(false)</code> persists after every write (dataset mount, agent-written files, clear). Mounted-dataset metadata is mirrored to <code>localStorage</code> so chips and the agent's file awareness restore instantly on reload <em>without</em> forcing the 10 MB Pyodide download.</p>
+            <pre class="code-ts" data-lang="ts">// First time the worker actually comes up, reconcile the optimistic
+// localStorage list against the real FS — prune what's gone, surface
+// what the agent wrote — so the agent is never told about a stale file.
+const res = await callWorker({ type: 'listFiles' })
+const present = new Set((res?.files ?? []).map((n) => `${DATA_DIR}/${n}`))
+for (const [id, m] of [...state.mounted.entries()])
+  if (!present.has(m.path)) { state.mounted.delete(id); chipFor(id)?.remove() }</pre>
+            <div class="callout warning">
+              IDBFS is keyed per-origin, not per-account: two anonymous users on one browser share <code>/data</code>. For a single-browser demo this is fine — and it reinforces the "workspace survives the anon→linked upgrade" theme — but it is not isolation for untrusted shared machines.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Admin surface</div>
+            <h2>AdminJS at <code>/admin</code>, gated by the app's own session</h2>
+            <p>No Drizzle adapter for AdminJS exists upstream, so <code>@adminjs/sql</code> introspects the Postgres schema directly over the same <code>DATABASE_URL</code> — avoiding a duplicate ORM. Resources are grouped into Identity, Quota, Activity, and Agent. Secrets (<code>key_hash</code>, OAuth tokens, session tokens, <code>account.password</code>) are <code>isVisible:false</code>; <code>usage_log</code> is read-only; the auth tables deny "new".</p>
+            <p>A small Express middleware reads the Better Auth session from the forwarded headers via <code>auth.api.getSession()</code>, rejects anonymous users, and checks the email against an <code>ADMIN_EMAILS</code> allowlist (empty in dev = any signed-in non-anonymous user; a hard deny in production). The top-level <code>node:http</code> server dispatches <code>/admin/*</code> to Express+AdminJS and everything else to Hono — single port, single session cookie.</p>
+            <div class="callout">
+              AdminJS bundles its React UI on first request (~30 s, memory-heavy — the Fargate task is sized at 1 vCPU / 2 GB for this). Production should precompile with <code>@adminjs/bundler</code>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Deployment</div>
+            <h2>ECS Fargate via Terraform — and where it diverges from the memo</h2>
+            <p>15 Terraform files under <code>infra/</code>: VPC across two AZs (ALB minimum), RDS Postgres 16 single-AZ, an ALB, two Fargate services, Cloud Map, ECR, Secrets Manager, IAM, CloudWatch.</p>
+            <table>
+              <thead><tr><th>Decision</th><th>Memo said</th><th>As built</th></tr></thead>
+              <tbody>
+                <tr><td>Electric exposure</td><td>ALB routes <code>/v1/shape*</code> to Electric</td><td>Electric is <strong>internal-only</strong> (Cloud Map, SG-locked to the app). The app proxies it at <code>/api/sync</code>, so per the memo's own design the browser never needs the raw URL. ALB has one target group.</td></tr>
+                <tr><td>ALB idle timeout</td><td>"600 on the Hono target group"</td><td>ALB idle timeout is <strong>load-balancer-wide</strong>, not per-target-group. Set <code>idle_timeout = 600</code> on the LB.</td></tr>
+                <tr><td>Network tier</td><td>single AZ v1</td><td>Public subnets, no NAT (cheapest deployable); RDS <code>publicly_accessible=false</code> + SG-locked. Documented v1 tradeoff.</td></tr>
+                <tr><td>TLS to Postgres</td><td>—</td><td><code>rds.force_ssl=0</code> for intra-VPC v1; revisit for prod.</td></tr>
+              </tbody>
+            </table>
+            <p>The app service runs one task with a 100/200 rolling deploy and circuit-breaker rollback (near-zero downtime at one task). Secrets are injected from one Secrets Manager secret at task start. A separate <code>migrate</code> task definition runs <code>bun run db:migrate</code> via <code>aws ecs run-task</code>. First apply is scoped to ECR only — task definitions can't register with an empty image.</p>
+            <div class="callout danger">
+              Electric needs replication privileges RDS does not grant the master role automatically: <code>GRANT rds_replication TO gradual;</code> once, if the slot won't create.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Validation</div>
+            <h2>What is verified, and what is review-only</h2>
+            <p>The build environment had no Postgres, no Docker daemon, and no Terraform binary. Honesty about that boundary matters more than a green checkmark.</p>
+            <table>
+              <thead><tr><th>Area</th><th>Confidence</th><th>Basis</th></tr></thead>
+              <tbody>
+                <tr><td>Type safety</td><td><span class="badge success">Verified</span></td><td><code>tsc --noEmit</code> clean across the server; browser JS bun-build clean.</td></tr>
+                <tr><td>Bun boot path</td><td><span class="badge success">Verified</span></td><td>Boots through AdminJS init, Better Auth init, <code>bun:sql</code> setup; fails only at the expected Postgres <code>ECONNREFUSED</code>.</td></tr>
+                <tr><td>Dataset catalog</td><td><span class="badge success">Verified</span></td><td>All six upstream URLs return 200 with expected sizes.</td></tr>
+                <tr><td>Inference loop, auth linking, Electric sync</td><td><span class="badge warning">Review-only</span></td><td>No live Postgres to exercise auth-gated routes end-to-end.</td></tr>
+                <tr><td>IDBFS round-trip, Pyodide</td><td><span class="badge warning">Review-only</span></td><td>Needs a real browser; standard Emscripten pattern, untested here.</td></tr>
+                <tr><td>Terraform</td><td><span class="badge danger">Unapplied</span></td><td>No <code>terraform validate</code>/<code>plan</code> available; HCL reviewed by hand. First <code>apply</code> is the real test.</td></tr>
+              </tbody>
+            </table>
+            <div class="callout">
+              Treat everything marked review-only as a design that should compile and run, not as a system that has been observed running.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="slide">
+        <div class="card">
+          <div class="card-body">
+            <div class="eyebrow">Sources &amp; open decisions</div>
+            <h2>What's solid, what's open</h2>
+            <div class="grid grid-2">
+              <div class="source">
+                <strong>High confidence</strong>
+                <span>Atomic conditional UPDATE on quota is correct under Postgres MVCC. Better Auth anonymous + <code>onLinkAccount</code> matches the gradual-registration spec. The OpenAI-shaped boundary keeps the agent provider-agnostic. Bun runs the whole stack including AdminJS once tiptap is pinned.</span>
+              </div>
+              <div class="source">
+                <strong>Main caveats</strong>
+                <span>BA <code>user.id</code> changes on link. Anthropic token estimation is approximate (<code>chars/4</code>, reconciled). Electric needs <code>rds_replication</code>. AdminJS first-request bundle is slow + memory-heavy. Nothing has been run against a live database.</span>
+              </div>
+            </div>
+            <h3>Open decisions</h3>
+            <table>
+              <thead><tr><th>Decision</th><th>Why it matters</th></tr></thead>
+              <tbody>
+                <tr><td>Anon quota numbers (tokens/day)</td><td>Sets demo unit economics; defaults are placeholders.</td></tr>
+                <tr><td>Launch provider list</td><td>Drives adapter count and key management.</td></tr>
+                <tr><td>Anthropic <code>/v1/messages/count_tokens</code></td><td>Exact pre-debit vs. the current conservative estimate.</td></tr>
+                <tr><td>Private subnets + NAT, Multi-AZ, force_ssl</td><td>The v1→prod hardening list.</td></tr>
+                <tr><td>Per-account FS isolation</td><td>Only matters if untrusted users share a browser.</td></tr>
+              </tbody>
+            </table>
+            <div class="footer">
+              As-built memo for <code>statik/gradual</code> · branch <code>claude/build-pi-agent-demo-3OkcW</code>. References: <code>bun.sh</code> · <code>hono.dev</code> · <code>better-auth.com</code> · <code>orm.drizzle.team</code> · <code>electric-sql.com</code> · <code>adminjs.co</code> · <code>pyodide.org</code>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var blocks = document.querySelectorAll('pre[data-lang]');
+      var tokenPattern =
+        /(\/\/[^\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b(function|const|let|var|if|else|return|async|await|import|export|from|new|for|of|in|class|interface|type|enum|extends|implements|public|private|protected|static|throw|try|catch|finally|while|do|switch|case|break|continue|null|undefined|void|true|false|SELECT|FROM|WHERE|UPDATE|SET|AND|OR|NOT|INSERT|INTO|VALUES|RETURNING|BEGIN|COMMIT|TRANSACTION|GREATEST|CREATE|TABLE|REFERENCES)\b|\b(true|false)\b|\b([A-Za-z_$][\w$]*)(?=\s*\())/g;
+
+      function escapeHtml(value) {
+        return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function classNameFor(token) {
+        if (token.indexOf("//") === 0) return "tok-comment";
+        if (token.charAt(0) === "'" || token.charAt(0) === '"' || token.charAt(0) === "`") return "tok-string";
+        if (/^(function|const|let|var|if|else|return|async|await|import|export|from|new|for|of|in|class|interface|type|enum|extends|implements|public|private|protected|static|throw|try|catch|finally|while|do|switch|case|break|continue|null|undefined|void|SELECT|FROM|WHERE|UPDATE|SET|AND|OR|NOT|INSERT|INTO|VALUES|RETURNING|BEGIN|COMMIT|TRANSACTION|GREATEST|CREATE|TABLE|REFERENCES)$/.test(token)) return "tok-keyword";
+        if (/^(true|false)$/.test(token)) return "tok-boolean";
+        return "tok-function";
+      }
+
+      function highlight(source) {
+        var cursor = 0, output = "", match;
+        while ((match = tokenPattern.exec(source)) !== null) {
+          output += escapeHtml(source.slice(cursor, match.index));
+          output += '<span class="' + classNameFor(match[0]) + '">' +
+            escapeHtml(match[0]) + "</span>";
+          cursor = match.index + match[0].length;
+        }
+        return output + escapeHtml(source.slice(cursor));
+      }
+
+      for (var i = 0; i < blocks.length; i += 1) {
+        blocks[i].innerHTML = highlight(blocks[i].textContent);
+      }
+
+      var sections = document.querySelectorAll("main > section");
+      var rail = document.querySelector(".story-rail");
+      var progress = document.querySelector(".progress-bar");
+      var progressFill = document.querySelector(".progress-bar__fill");
+      var chapterNumber = document.querySelector(".chapter-indicator__number");
+      var chapterLabel = document.querySelector(".chapter-indicator__label");
+      var chapterRule = document.querySelector(".chapter-indicator__rule span");
+      var dots = [];
+      var activeIndex = 0;
+      var prefersReducedMotion = window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function twoDigit(value) { return value < 10 ? "0" + value : String(value); }
+
+      function isEditableTarget(target) {
+        if (!target) return false;
+        var tagName = target.tagName ? target.tagName.toLowerCase() : "";
+        return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+      }
+
+      function sectionTitle(section, index) {
+        var label = section.querySelector(".eyebrow");
+        var heading = section.querySelector("h1, h2");
+        if (label && heading) return label.textContent + ": " + heading.textContent;
+        if (heading) return heading.textContent;
+        return "Section " + String(index + 1);
+      }
+
+      function scrollToSection(index) {
+        if (index < 0) index = 0;
+        if (index >= sections.length) index = sections.length - 1;
+        var target = sections[index];
+        if (!target) return;
+        target.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+      }
+
+      function buildRail() {
+        if (!rail) return;
+        for (var index = 0; index < sections.length; index += 1) {
+          var dot = document.createElement("button");
+          dot.className = "story-dot";
+          dot.type = "button";
+          dot.setAttribute("aria-label", sectionTitle(sections[index], index));
+          if (index < 9) dot.setAttribute("aria-keyshortcuts", String(index + 1));
+          dot.dataset.index = String(index);
+          dot.addEventListener("click", function () { scrollToSection(Number(this.dataset.index)); });
+          rail.appendChild(dot);
+          dots.push(dot);
+        }
+      }
+
+      function currentSectionIndex() {
+        var viewportMiddle = window.scrollY + window.innerHeight * 0.45;
+        var current = 0;
+        for (var index = 0; index < sections.length; index += 1) {
+          if (sections[index].offsetTop <= viewportMiddle) current = index;
+        }
+        return current;
+      }
+
+      function updateProgress() {
+        var documentHeight = document.documentElement.scrollHeight - window.innerHeight;
+        var pct = documentHeight > 0 ? window.scrollY / documentHeight : 0;
+        pct = Math.max(0, Math.min(1, pct));
+        if (progressFill) progressFill.style.width = pct * 100 + "%";
+        if (chapterRule) chapterRule.style.width = pct * 100 + "%";
+        if (progress) progress.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+      }
+
+      function updateActiveSection() {
+        activeIndex = currentSectionIndex();
+        for (var index = 0; index < sections.length; index += 1) {
+          var isActive = index === activeIndex;
+          sections[index].classList.toggle("is-active", isActive);
+          if (dots[index]) {
+            dots[index].classList.toggle("is-active", isActive);
+            if (isActive) dots[index].setAttribute("aria-current", "step");
+            else dots[index].removeAttribute("aria-current");
+          }
+        }
+        if (chapterNumber) chapterNumber.textContent = twoDigit(activeIndex + 1);
+        if (chapterLabel && sections[activeIndex]) {
+          var label = sections[activeIndex].querySelector(".eyebrow");
+          if (label) chapterLabel.textContent = label.textContent;
+          else chapterLabel.textContent = "Section " + String(activeIndex + 1);
+        }
+      }
+
+      function updateStoryState() { updateProgress(); updateActiveSection(); }
+
+      function handleKeydown(event) {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isEditableTarget(event.target)) return;
+        var tagName = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
+        if (tagName === "button" && (event.key === " " || event.key === "Enter")) return;
+        if (/^[1-9]$/.test(event.key)) {
+          var sectionIndex = Number(event.key) - 1;
+          if (sectionIndex < sections.length) { event.preventDefault(); scrollToSection(sectionIndex); }
+          return;
+        }
+        if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") {
+          event.preventDefault(); scrollToSection(currentSectionIndex() + 1); return;
+        }
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp") {
+          event.preventDefault(); scrollToSection(currentSectionIndex() - 1); return;
+        }
+        if (event.key === "Home") { event.preventDefault(); scrollToSection(0); return; }
+        if (event.key === "End") { event.preventDefault(); scrollToSection(sections.length - 1); }
+      }
+
+      buildRail();
+      updateStoryState();
+      window.addEventListener("scroll", updateStoryState, { passive: true });
+      window.addEventListener("resize", updateStoryState);
+      window.addEventListener("keydown", handleKeydown);
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 # Gradual — Pi Agent Demo Platform
 
-Hono + Postgres + Electric + Better Auth, on **Bun**. Anonymous-first identities that upgrade in place. See `docs/design.md` for the full design memo.
+Hono + Postgres + Electric + Better Auth, on **Bun**. Anonymous-first identities that upgrade in place.
+
+Full as-built design memo: `docs/index.html` (published to GitHub Pages once enabled — Settings → Pages → Deploy from branch `main`, folder `/docs`). `docs/design.md` is a plaintext quick-reference.
 
 ## Layout
 
