@@ -56,7 +56,9 @@ open http://localhost:3000
 
 ### Datasets / virtual FS
 
-The **Datasets** menu lists a curated catalog (seaborn-data + vega-datasets, plus a sample Parquet). Selecting one downloads it through the server proxy (Kaggle isn't usable directly — its files need an authenticated API token; the catalog is structured so a Kaggle source can be added later behind `KAGGLE_USERNAME`/`KAGGLE_KEY`) and writes it into the Pyodide worker's MEMFS at `/data/<filename>`. Mounted paths are injected into the agent's system prompt so it can `pd.read_csv("/data/iris.csv")`. The kernel persists across cells but is fresh on reload (IndexedDB persistence is deliberately deferred).
+The **Datasets** menu lists a curated catalog (seaborn-data + vega-datasets, plus a sample Parquet). Selecting one downloads it through the server proxy (Kaggle isn't usable directly — its files need an authenticated API token; the catalog is structured so a Kaggle source can be added later behind `KAGGLE_USERNAME`/`KAGGLE_KEY`) and writes it into the Pyodide worker's filesystem at `/data/<filename>`. Mounted paths are injected into the agent's system prompt so it can `pd.read_csv("/data/iris.csv")`.
+
+`/data` is an Emscripten **IDBFS** mount, so files (mounted datasets *and* anything the agent writes from Python) survive a page reload: `syncfs(true)` restores from IndexedDB on worker init, `syncfs(false)` persists after every write. Mounted-dataset metadata is mirrored to `localStorage` so the chips and the agent's file awareness restore instantly on reload without forcing the ~10 MB Pyodide download; the first time the worker actually comes up it reconciles that optimistic list against the real FS (pruning anything missing, surfacing anything the agent wrote). A **Clear** button in the Datasets panel wipes `/data` and the metadata.
 
 ## Bun-specific notes
 

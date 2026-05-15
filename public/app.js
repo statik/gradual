@@ -12,7 +12,7 @@ that persists state between calls. Use it for any computation, data wrangling, o
 Print results with print(); the final expression's repr is also returned.
 Keep responses short. When a tool is the right move, call it instead of describing it.`
 
-/** @type {{ user: any | null, sessionId: string | null, messages: any[], pyodideWorker: Worker | null, busy: boolean, mounted: Map<string, { path: string, format: string, note?: string }> }} */
+/** @type {{ user: any | null, sessionId: string | null, messages: any[], pyodideWorker: Worker | null, busy: boolean, mounted: Map<string, { name: string, path: string, format: string, note?: string }>, hydrated: boolean }} */
 const state = {
   user: null,
   sessionId: null,
@@ -20,13 +20,16 @@ const state = {
   pyodideWorker: null,
   busy: false,
   mounted: new Map(),
+  hydrated: false,
 }
 
 const DATA_DIR = '/data'
+const MOUNTED_KEY = 'gradual.mounted.v1'
 
 // ---------- bootstrap ----------
 
 async function init() {
+  restoreMountedFromStorage()
   await ensureSignedIn()
   bindUI()
   loadDatasetCatalog().catch((err) => console.warn('[datasets] catalog load failed', err))
@@ -87,6 +90,16 @@ function bindUI() {
       dataBtn.setAttribute('aria-expanded', 'false')
     }
   })
+
+  const clearBtn = $('#clear-workspace')
+  clearBtn.addEventListener('click', async () => {
+    clearBtn.disabled = true
+    clearBtn.textContent = 'Clearing…'
+    try { await clearWorkspace() } finally {
+      clearBtn.disabled = false
+      clearBtn.textContent = 'Clear'
+    }
+  })
 }
 
 // ---------- datasets / virtual FS ----------
@@ -130,7 +143,8 @@ async function mountDataset(d, btn) {
     const result = await callWorker({ type: 'writeFile', path, bytes: buf }, [buf])
     if (!result.ok) throw new Error(result.error || 'write_failed')
 
-    state.mounted.set(d.id, { path, format: d.format, note: d.note })
+    state.mounted.set(d.id, { name: d.name, path, format: d.format, note: d.note })
+    saveMountedToStorage()
     upsertMountedChip(d.id, { path, state: 'ready' })
     btn.textContent = 'Mounted'
     btn.classList.add('is-mounted')
@@ -172,6 +186,69 @@ function mountedFilesNote() {
   return `\n\nFiles available in the virtual filesystem:\n${lines.join('\n')}\nLoad them with pandas, e.g. pd.read_csv("PATH").`
 }
 
+// ---------- persistence ----------
+
+function saveMountedToStorage() {
+  try {
+    const arr = [...state.mounted.entries()].map(([id, m]) => ({ id, ...m }))
+    localStorage.setItem(MOUNTED_KEY, JSON.stringify(arr))
+  } catch { /* storage may be unavailable */ }
+}
+
+function restoreMountedFromStorage() {
+  let arr
+  try { arr = JSON.parse(localStorage.getItem(MOUNTED_KEY) || '[]') } catch { arr = [] }
+  if (!Array.isArray(arr)) return
+  for (const m of arr) {
+    if (!m?.id || !m?.path) continue
+    state.mounted.set(m.id, { name: m.name ?? m.id, path: m.path, format: m.format ?? 'csv', note: m.note })
+    upsertMountedChip(m.id, { path: m.path, state: 'ready' })
+  }
+}
+
+/* The chips/system-prompt are restored optimistically from localStorage.
+   The first time the worker (and thus IDBFS) actually comes up, confirm
+   which files truly exist and prune anything that doesn't. */
+async function hydrateFromWorker() {
+  if (state.hydrated) return
+  state.hydrated = true
+
+  const res = await callWorker({ type: 'listFiles' })
+  const present = new Set((res?.files ?? []).map((n) => `${DATA_DIR}/${n}`))
+
+  for (const [id, m] of [...state.mounted.entries()]) {
+    if (!present.has(m.path)) {
+      state.mounted.delete(id)
+      const chip = $('#mounted-chips').querySelector(`[data-chip="${CSS.escape(id)}"]`)
+      chip?.remove()
+    }
+  }
+  for (const name of res?.files ?? []) {
+    const path = `${DATA_DIR}/${name}`
+    if ([...state.mounted.values()].some((m) => m.path === path)) continue
+    const id = `fs:${name}`
+    const format = name.endsWith('.parquet') ? 'parquet' : name.endsWith('.csv') ? 'csv' : 'file'
+    state.mounted.set(id, { name, path, format })
+    upsertMountedChip(id, { path, state: 'ready' })
+  }
+  saveMountedToStorage()
+  if ($('#mounted-chips').children.length === 0) $('#mounted-strip').hidden = true
+}
+
+async function clearWorkspace() {
+  await callWorker({ type: 'clearFiles' }).catch(() => {})
+  state.mounted.clear()
+  state.hydrated = true
+  saveMountedToStorage()
+  $('#mounted-chips').innerHTML = ''
+  $('#mounted-strip').hidden = true
+  for (const btn of document.querySelectorAll('.data-list button.is-mounted')) {
+    btn.classList.remove('is-mounted')
+    btn.disabled = false
+    btn.textContent = 'Mount'
+  }
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
@@ -211,6 +288,15 @@ async function submitTurn() {
   input.value = ''
 
   pushMessage({ role: 'user', content: text })
+
+  // If datasets were restored from a previous session, make sure the
+  // files really exist in IDBFS before the agent is told about them.
+  if (state.mounted.size > 0 && !state.hydrated) {
+    setBusy(true)
+    try { await hydrateFromWorker() } catch (err) { console.warn('[hydrate]', err) }
+    setBusy(false)
+  }
+
   await runInference()
 }
 

@@ -16,7 +16,10 @@
       <div class="data-menu">
         <button type="button" id="data-btn" aria-haspopup="true" aria-expanded="false">Datasets ▾</button>
         <div id="data-panel" class="data-panel" hidden role="menu" aria-label="Sample datasets">
-          <div class="data-panel__head">Mount a sample dataset into the Python FS</div>
+          <div class="data-panel__head">
+            <span>Mount into <code>/data</code> · persists across reloads</span>
+            <button type="button" id="clear-workspace">Clear</button>
+          </div>
           <ul id="data-list" class="data-list"></ul>
         </div>
       </div>
