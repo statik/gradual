@@ -13,6 +13,13 @@
       <strong>Pi Agent Demo</strong>
     </div>
     <div class="topbar__right">
+      <div class="data-menu">
+        <button type="button" id="data-btn" aria-haspopup="true" aria-expanded="false">Datasets ▾</button>
+        <div id="data-panel" class="data-panel" hidden role="menu" aria-label="Sample datasets">
+          <div class="data-panel__head">Mount a sample dataset into the Python FS</div>
+          <ul id="data-list" class="data-list"></ul>
+        </div>
+      </div>
       <select id="model-select" aria-label="Model">
         <option value="gpt-4o-mini" selected>gpt-4o-mini</option>
         <option value="gpt-4o">gpt-4o</option>
@@ -27,12 +34,17 @@
     </div>
   </header>
 
+  <div id="mounted-strip" class="mounted-strip" hidden>
+    <span class="mounted-strip__label">Mounted</span>
+    <div id="mounted-chips" class="mounted-chips"></div>
+  </div>
+
   <main class="layout">
     <section id="transcript" class="transcript">
       <article class="msg msg--system">
         <header class="msg__role">system</header>
         <div class="msg__content">
-          Ask the agent to do something — it can run Python via the <code>python_run</code> tool. Each cell waits for you to Run or Skip.
+          Ask the agent to do something — it can run Python via the <code>python_run</code> tool. Each cell waits for you to Run or Skip. Use <strong>Datasets</strong> to mount a CSV/Parquet file into <code>/data</code>.
         </div>
       </article>
     </section>

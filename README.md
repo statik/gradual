@@ -50,8 +50,13 @@ open http://localhost:3000
 - `POST /api/auth/sign-in/social` — OAuth + `onLinkAccount` re-targets FKs in one transaction.
 - `POST /api/inference` — estimate → atomic debit → SSE stream → reconcile + insert message/tool calls in one tx.
 - `GET /api/sync/:table` — proxies to Electric with `account_id = <user.id>` pinned server-side.
+- `GET /api/datasets` + `GET /api/datasets/:id/download` — server-side proxy over a curated catalog of public CSV/Parquet sample sets; the browser writes the bytes into the Pyodide MEMFS at `/data/<file>`.
 - `GET /api/me`, `/healthz`, `/readyz`.
 - `GET /admin` — AdminJS over `@adminjs/sql`, gated by Better Auth + `ADMIN_EMAILS` allowlist.
+
+### Datasets / virtual FS
+
+The **Datasets** menu lists a curated catalog (seaborn-data + vega-datasets, plus a sample Parquet). Selecting one downloads it through the server proxy (Kaggle isn't usable directly — its files need an authenticated API token; the catalog is structured so a Kaggle source can be added later behind `KAGGLE_USERNAME`/`KAGGLE_KEY`) and writes it into the Pyodide worker's MEMFS at `/data/<filename>`. Mounted paths are injected into the agent's system prompt so it can `pd.read_csv("/data/iris.csv")`. The kernel persists across cells but is fresh on reload (IndexedDB persistence is deliberately deferred).
 
 ## Bun-specific notes
 

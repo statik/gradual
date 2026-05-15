@@ -12,20 +12,24 @@ that persists state between calls. Use it for any computation, data wrangling, o
 Print results with print(); the final expression's repr is also returned.
 Keep responses short. When a tool is the right move, call it instead of describing it.`
 
-/** @type {{ user: any | null, sessionId: string | null, messages: any[], pyodideWorker: Worker | null, busy: boolean }} */
+/** @type {{ user: any | null, sessionId: string | null, messages: any[], pyodideWorker: Worker | null, busy: boolean, mounted: Map<string, { path: string, format: string, note?: string }> }} */
 const state = {
   user: null,
   sessionId: null,
   messages: [],
   pyodideWorker: null,
   busy: false,
+  mounted: new Map(),
 }
+
+const DATA_DIR = '/data'
 
 // ---------- bootstrap ----------
 
 async function init() {
   await ensureSignedIn()
   bindUI()
+  loadDatasetCatalog().catch((err) => console.warn('[datasets] catalog load failed', err))
   subscribeQuota().catch((err) => console.warn('[quota subscription] stopped', err))
 }
 
@@ -67,6 +71,133 @@ function bindUI() {
       e.preventDefault()
       form.requestSubmit()
     }
+  })
+
+  const dataBtn = $('#data-btn')
+  const dataPanel = $('#data-panel')
+  dataBtn.addEventListener('click', () => {
+    const open = dataPanel.hidden
+    dataPanel.hidden = !open
+    dataBtn.setAttribute('aria-expanded', String(open))
+  })
+  document.addEventListener('click', (e) => {
+    if (dataPanel.hidden) return
+    if (!dataPanel.contains(e.target) && e.target !== dataBtn) {
+      dataPanel.hidden = true
+      dataBtn.setAttribute('aria-expanded', 'false')
+    }
+  })
+}
+
+// ---------- datasets / virtual FS ----------
+
+async function loadDatasetCatalog() {
+  const res = await fetch('/api/datasets', { credentials: 'include' })
+  if (!res.ok) return
+  const { datasets } = await res.json()
+  const list = $('#data-list')
+  list.innerHTML = ''
+
+  for (const d of datasets ?? []) {
+    const li = document.createElement('li')
+    const kb = Math.max(1, Math.round(d.approxBytes / 1000))
+    li.innerHTML = `
+      <div class="data-list__meta">
+        <div class="data-list__name">${escapeHtml(d.name)}<span class="fmt">${escapeHtml(d.format)}</span></div>
+        <div class="data-list__desc">${escapeHtml(d.description)} · ~${kb} KB</div>
+      </div>
+      <button type="button" data-id="${escapeHtml(d.id)}">Mount</button>
+    `
+    const btn = li.querySelector('button')
+    btn.addEventListener('click', () => mountDataset(d, btn))
+    list.appendChild(li)
+  }
+}
+
+async function mountDataset(d, btn) {
+  const path = `${DATA_DIR}/${d.filename}`
+  btn.disabled = true
+  btn.textContent = 'Downloading…'
+  const chip = upsertMountedChip(d.id, { path, state: 'loading' })
+
+  try {
+    const res = await fetch(`/api/datasets/${encodeURIComponent(d.id)}/download`, {
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error(`download_failed_${res.status}`)
+    const buf = await res.arrayBuffer()
+
+    const result = await callWorker({ type: 'writeFile', path, bytes: buf }, [buf])
+    if (!result.ok) throw new Error(result.error || 'write_failed')
+
+    state.mounted.set(d.id, { path, format: d.format, note: d.note })
+    upsertMountedChip(d.id, { path, state: 'ready' })
+    btn.textContent = 'Mounted'
+    btn.classList.add('is-mounted')
+
+    pushMessage({
+      role: 'system',
+      content: `Dataset "${d.name}" mounted at ${path} (${d.format}).${d.note ? ' ' + d.note : ''}`,
+    })
+  } catch (err) {
+    upsertMountedChip(d.id, { path, state: 'error' })
+    btn.disabled = false
+    btn.textContent = 'Retry'
+    console.error('[mount]', err)
+  }
+}
+
+function upsertMountedChip(id, { path, state: chipState }) {
+  const strip = $('#mounted-strip')
+  const chips = $('#mounted-chips')
+  strip.hidden = false
+  let chip = chips.querySelector(`[data-chip="${CSS.escape(id)}"]`)
+  if (!chip) {
+    chip = document.createElement('span')
+    chip.className = 'mounted-chip'
+    chip.dataset.chip = id
+    chips.appendChild(chip)
+  }
+  chip.dataset.state = chipState
+  const label = chipState === 'loading' ? 'loading ' : chipState === 'error' ? 'failed ' : ''
+  chip.innerHTML = `${label}<code>${escapeHtml(path)}</code>`
+  return chip
+}
+
+function mountedFilesNote() {
+  if (state.mounted.size === 0) return ''
+  const lines = [...state.mounted.values()].map(
+    (m) => `- ${m.path} (${m.format})${m.note ? ` — ${m.note}` : ''}`,
+  )
+  return `\n\nFiles available in the virtual filesystem:\n${lines.join('\n')}\nLoad them with pandas, e.g. pd.read_csv("PATH").`
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ))
+}
+
+// ---------- pyodide worker ----------
+
+function ensureWorker() {
+  if (!state.pyodideWorker) {
+    state.pyodideWorker = new Worker('/pyodide-worker.js')
+  }
+  return state.pyodideWorker
+}
+
+function callWorker(message, transfer) {
+  const worker = ensureWorker()
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2)
+    const handler = (event) => {
+      if (event.data?.id !== id) return
+      worker.removeEventListener('message', handler)
+      resolve(event.data)
+    }
+    worker.addEventListener('message', handler)
+    worker.postMessage({ ...message, id }, transfer ?? [])
   })
 }
 
@@ -310,19 +441,7 @@ function formatOutput(out) {
 // ---------- pyodide ----------
 
 async function runPython(code) {
-  if (!state.pyodideWorker) {
-    state.pyodideWorker = new Worker('/pyodide-worker.js')
-  }
-  return new Promise((resolve) => {
-    const id = Math.random().toString(36).slice(2)
-    const handler = (event) => {
-      if (event.data?.id !== id) return
-      state.pyodideWorker.removeEventListener('message', handler)
-      resolve(event.data)
-    }
-    state.pyodideWorker.addEventListener('message', handler)
-    state.pyodideWorker.postMessage({ id, type: 'run', code })
-  })
+  return callWorker({ type: 'run', code })
 }
 
 // ---------- message bookkeeping ----------
@@ -332,7 +451,7 @@ function newAssistantMessage() {
 }
 
 function buildWireMessages() {
-  const wire = [{ role: 'system', content: SYSTEM_PROMPT }]
+  const wire = [{ role: 'system', content: SYSTEM_PROMPT + mountedFilesNote() }]
   for (const m of state.messages) {
     if (m.role === 'assistant') {
       const entry = { role: 'assistant', content: m.content }
