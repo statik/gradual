@@ -11,6 +11,7 @@ import { sessionMiddleware } from './middleware/auth.js'
 import { health } from './routes/health.js'
 import { inference } from './routes/inference.js'
 import { sync } from './routes/sync.js'
+import { toolCalls } from './routes/tool-calls.js'
 import type { AppContext } from './types.js'
 
 const app = new Hono<AppContext>()
@@ -24,6 +25,7 @@ app.use('/api/*', sessionMiddleware)
 app.route('/', health)
 app.route('/api/inference', inference)
 app.route('/api/sync', sync)
+app.route('/api/tool-calls', toolCalls)
 
 app.get('/api/me', (c) => {
   const user = c.get('user')

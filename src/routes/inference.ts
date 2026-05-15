@@ -1,3 +1,4 @@
+import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { adapterFor } from '../adapters/index.js'
 import type { ChatRequest, OpenAIChunk } from '../adapters/types.js'
@@ -59,7 +60,16 @@ inference.post('/', async (c) => {
     return c.json({ error: 'quota_exceeded', reset_at: bucket.resetAt.toISOString() }, 429)
   }
 
-  const sessionId = body.session_id ?? await createSession(user.id, body.model)
+  let sessionId: string
+  if (body.session_id) {
+    const owned = await db.select({ id: agentSessions.id }).from(agentSessions)
+      .where(and(eq(agentSessions.id, body.session_id), eq(agentSessions.accountId, user.id)))
+      .limit(1)
+    if (!owned.length) return c.json({ error: 'session_not_found' }, 404)
+    sessionId = body.session_id
+  } else {
+    sessionId = await createSession(user.id, body.model)
+  }
   const lastMessage = body.messages[body.messages.length - 1]
   if (lastMessage && lastMessage.role === 'user') {
     await insertUserMessage(sessionId, user.id, lastMessage)
@@ -125,6 +135,7 @@ inference.post('/', async (c) => {
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
       'Connection': 'keep-alive',
+      'X-Session-Id': sessionId,
     },
   })
 })

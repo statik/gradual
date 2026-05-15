@@ -4,84 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pi Agent Demo</title>
-  <style>
-    :root { color-scheme: light; --paper:#cfd4cf; --ink:#171c1d; --olive:#4a4f3f; --ochre:#b79b65; }
-    body { margin:0; font-family: Georgia, serif; background: var(--paper); color: var(--ink); }
-    main { max-width: 56rem; margin: 0 auto; padding: 3rem 1.25rem; }
-    h1 { color: var(--olive); font-weight: 500; letter-spacing: -0.03em; }
-    .row { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.25rem; }
-    button { font: inherit; padding: .55rem 1rem; border: 1px solid var(--ink); background: #e6e6df; cursor: pointer; }
-    button:hover { background: var(--ochre); color: #fff; }
-    pre { background: #bdc8c3; padding: 1rem; overflow-x: auto; border-left: 4px solid var(--olive); }
-    .quota { margin-top: 1rem; font-family: ui-monospace, monospace; font-size: .9rem; }
-  </style>
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main>
-    <h1>Pi Agent Demo</h1>
-    <p>Anonymous-first. Sign in to upgrade your quota; the same row keeps your history.</p>
-    <div class="row">
-      <button id="who">Who am I?</button>
-      <button id="anon">Sign in anonymously</button>
-      <button id="chat">Stream a hello</button>
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="dot"></span>
+      <strong>Pi Agent Demo</strong>
     </div>
-    <pre id="out">(ready)</pre>
-    <div class="quota" id="quota"></div>
+    <div class="topbar__right">
+      <select id="model-select" aria-label="Model">
+        <option value="gpt-4o-mini" selected>gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+        <option value="claude-3-5-haiku-latest">claude-3-5-haiku</option>
+        <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet</option>
+      </select>
+      <div class="quota" title="Daily token budget">
+        <div class="quota__bar"><div id="quota-fill"></div></div>
+        <span id="quota-text">— / —</span>
+      </div>
+      <div id="user-pill" class="pill">…</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section id="transcript" class="transcript">
+      <article class="msg msg--system">
+        <header class="msg__role">system</header>
+        <div class="msg__content">
+          Ask the agent to do something — it can run Python via the <code>python_run</code> tool. Each cell waits for you to Run or Skip.
+        </div>
+      </article>
+    </section>
   </main>
-  <script type="module">
-    const out = document.getElementById('out')
-    const quota = document.getElementById('quota')
 
-    function log(value) {
-      out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
-    }
+  <footer class="composer">
+    <form id="composer-form">
+      <textarea id="composer-input" rows="2" placeholder="e.g. compute the first 20 fibonacci numbers and plot them" required></textarea>
+      <button type="submit" id="composer-submit">Send</button>
+    </form>
+    <div class="composer__hints">
+      <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline
+    </div>
+  </footer>
 
-    document.getElementById('who').onclick = async () => {
-      const r = await fetch('/api/me', { credentials: 'include' })
-      log(await r.json())
-    }
-
-    document.getElementById('anon').onclick = async () => {
-      const r = await fetch('/api/auth/sign-in/anonymous', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: '{}',
-      })
-      log(await r.json())
-    }
-
-    document.getElementById('chat').onclick = async () => {
-      const r = await fetch('/api/inference', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          max_tokens: 128,
-          messages: [{ role: 'user', content: 'Say hi in five words.' }],
-        }),
-      })
-      if (!r.ok) { log(await r.json()); return }
-      const reader = r.body.getReader()
-      const decoder = new TextDecoder()
-      let acc = ''
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        for (const line of decoder.decode(value).split('\n')) {
-          if (!line.startsWith('data:')) continue
-          const payload = line.slice(5).trim()
-          if (payload === '[DONE]') continue
-          try {
-            const chunk = JSON.parse(payload)
-            const piece = chunk.choices?.[0]?.delta?.content ?? ''
-            acc += piece
-            log(acc)
-          } catch {}
-        }
-      }
-    }
-  </script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>
