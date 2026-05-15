@@ -1,7 +1,10 @@
-import { serve } from '@hono/node-server'
+import { getRequestListener } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
+import express from 'express'
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
+import http from 'node:http'
+import { buildAdminRouter } from './admin/index.js'
 import { auth } from './auth.js'
 import { env } from './env.js'
 import { sessionMiddleware } from './middleware/auth.js'
@@ -37,9 +40,34 @@ app.get('/api/me', (c) => {
 
 app.use('/*', serveStatic({ root: './public' }))
 
+async function start(): Promise<void> {
+  console.log('[gradual] building admin router…')
+  const adminRouter = await buildAdminRouter()
+  console.log('[gradual] admin router ready')
+
+  const adminApp = express()
+  adminApp.use('/admin', adminRouter)
+
+  const honoHandler = getRequestListener(app.fetch)
+
+  const server = http.createServer((req, res) => {
+    if (req.url && (req.url === '/admin' || req.url.startsWith('/admin/') || req.url.startsWith('/admin?'))) {
+      adminApp(req, res)
+    } else {
+      honoHandler(req, res)
+    }
+  })
+
+  server.listen(env.port, () => {
+    console.log(`[gradual] listening on http://localhost:${env.port}`)
+    console.log(`[gradual] admin at http://localhost:${env.port}/admin`)
+  })
+}
+
 if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
-  serve({ fetch: app.fetch, port: env.port }, (info) => {
-    console.log(`[gradual] listening on http://localhost:${info.port}`)
+  start().catch((err) => {
+    console.error('[gradual] failed to start', err)
+    process.exit(1)
   })
 }
 
